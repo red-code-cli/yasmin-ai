@@ -345,8 +345,9 @@ private class Pose {
         dy -= breath * 3.5f * sm(a.hipY - 180f, a.headBaseY - 120f, y)
         dx += breath * 0.010f * (x - a.centerX) * bell(y, a.chestY, 170f)
 
-        // 3. talking head nod
-        dy += talk * 5f * sm(a.headBaseY, a.eyeL.y - 50f, y)
+        // 3. talking head nod (rigid across whole face so eyes & lips never drift relative to each other)
+        val chinPivot = a.mouth.y + 24f
+        dy += talk * 5f * sm(a.headBaseY, chinPivot, y)
 
         // 4. hair swing (masked by hairW so clothes & body never wobble with hair)
         val hw = sm(hz.topY, hz.midY, y) * (1f - 0.5f * sm(hz.fadeStartY, hz.fadeEndY, y)) * hairW
@@ -375,6 +376,19 @@ private class Pose {
         dx *= edge
         dy *= edge
     }
+}
+
+private inline fun Pose.at(
+    px: Float,
+    py: Float,
+    character: CharacterSpec,
+    offX: Float,
+    offY: Float,
+    s: Float,
+    block: (Float, Float) -> Unit
+) {
+    warp(px, py, character)
+    block(offX + (px + dx) * s, offY + (py + dy) * s)
 }
 
 private fun blink(t: Float): Float {
@@ -464,7 +478,7 @@ private fun DrawScope.drawMouth(
             val sc = MOUTH_PATCH[i]
             val al = MOUTH_PATCH[i + 1] * fadeAll
             i += 2
-            drawOval(skinMouth.copy(alpha = al), Offset(-17f * sc, -6.5f * sc), Size(34f * sc, 13f * sc))
+            drawOval(skinMouth.copy(alpha = al), Offset(-20f * sc, -8.5f * sc), Size(40f * sc, 17f * sc))
         }
 
         val closed = (1f - sm(0.03f, 0.2f, eo)) * shape
@@ -801,15 +815,6 @@ fun AnimeCharacter(
             nc.restoreToCount(layer)
         }
 
-        fun scrX(px: Float, py: Float): Float {
-            pose.warp(px, py, character)
-            return offX + (px + pose.dx) * s
-        }
-
-        fun scrY(px: Float, py: Float): Float {
-            return offY + (py + pose.dy) * s
-        }
-
         val a = character.anchors
         val bl = blink(time)
         val lidBase = face[F_LID] + (1f - face[F_LID]) * bl
@@ -817,24 +822,18 @@ fun AnimeCharacter(
         val wp = time % 3.4f
         val lidR = max(lidBase, face[F_WINK] * sm(0f, 0.15f, wp) * (1f - sm(0.9f, 1.1f, wp)))
 
-        val eyeLX = scrX(a.eyeL.x, a.eyeL.y)
-        val eyeLY = scrY(a.eyeL.x, a.eyeL.y)
-        val eyeRX = scrX(a.eyeR.x, a.eyeR.y)
-        val eyeRY = scrY(a.eyeR.x, a.eyeR.y)
+        var eyeLX = 0f; var eyeLY = 0f
+        var eyeRX = 0f; var eyeRY = 0f
+        pose.at(a.eyeL.x, a.eyeL.y, character, offX, offY, s) { x, y -> eyeLX = x; eyeLY = y }
+        pose.at(a.eyeR.x, a.eyeR.y, character, offX, offY, s) { x, y -> eyeRX = x; eyeRY = y }
 
-        val glX = scrX(a.gloom.x, a.gloom.y)
-        val glY = scrY(a.gloom.x, a.gloom.y)
-        drawGloom(glX, glY, s, face[F_GLOOM])
+        pose.at(a.gloom.x, a.gloom.y, character, offX, offY, s) { glX, glY -> drawGloom(glX, glY, s, face[F_GLOOM]) }
 
         val warm = Color(0xFFFF6F8F)
         val angerBlush = Color(0xFFFF5470)
         val blushCol = if (face[F_ANGER] > 0.5f) angerBlush else warm
-        val chLX = scrX(a.cheekL.x, a.cheekL.y)
-        val chLY = scrY(a.cheekL.x, a.cheekL.y)
-        val chRX = scrX(a.cheekR.x, a.cheekR.y)
-        val chRY = scrY(a.cheekR.x, a.cheekR.y)
-        drawBlush(chLX, chLY, s, face[F_BLUSH], blushCol)
-        drawBlush(chRX, chRY, s, face[F_BLUSH], blushCol)
+        pose.at(a.cheekL.x, a.cheekL.y, character, offX, offY, s) { chLX, chLY -> drawBlush(chLX, chLY, s, face[F_BLUSH], blushCol) }
+        pose.at(a.cheekR.x, a.cheekR.y, character, offX, offY, s) { chRX, chRY -> drawBlush(chRX, chRY, s, face[F_BLUSH], blushCol) }
 
         val eyeOpen = (1f - lidBase * 1.2f).coerceIn(0f, 1f)
         if (face[F_HEART] > 0.03f) {
@@ -852,31 +851,17 @@ fun AnimeCharacter(
         drawEyelid(eyeLX, eyeLY, a.eyeLW * s, a.eyeLH * s, a.eyeLTilt + face[F_LTILT], lidL, skinTop, skinBot, lashCol, scratch)
         drawEyelid(eyeRX, eyeRY, a.eyeRW * s, a.eyeRH * s, a.eyeRTilt - face[F_LTILT], lidR, skinTop, skinBot, lashCol, scratch)
 
-        val bLX = scrX(a.browL.x, a.browL.y + face[F_BY])
-        val bLY = scrY(a.browL.x, a.browL.y + face[F_BY])
-        val bRX = scrX(a.browR.x, a.browR.y + face[F_BY])
-        val bRY = scrY(a.browR.x, a.browR.y + face[F_BY])
-        drawBrow(bLX, bLY, s, true, face[F_BTILT], face[F_BROW], browCol, scratch)
-        drawBrow(bRX, bRY, s, false, face[F_BTILT], face[F_BROW], browCol, scratch)
+        pose.at(a.browL.x, a.browL.y + face[F_BY], character, offX, offY, s) { bLX, bLY -> drawBrow(bLX, bLY, s, true, face[F_BTILT], face[F_BROW], browCol, scratch) }
+        pose.at(a.browR.x, a.browR.y + face[F_BY], character, offX, offY, s) { bRX, bRY -> drawBrow(bRX, bRY, s, false, face[F_BTILT], face[F_BROW], browCol, scratch) }
 
-        val mX = scrX(a.mouth.x, a.mouth.y)
-        val mY = scrY(a.mouth.x, a.mouth.y)
-        drawMouth(mX, mY, s, a.mouthTiltDeg, pose.mouth, time, face, skinMouth, mouthLineCol, scratch)
+        pose.at(a.mouth.x, a.mouth.y, character, offX, offY, s) { mX, mY ->
+            drawMouth(mX, mY, s, a.mouthTiltDeg, pose.mouth, time, face, skinMouth, mouthLineCol, scratch)
+        }
 
-        val tLX = scrX(a.tearL.x, a.tearL.y)
-        val tLY = scrY(a.tearL.x, a.tearL.y)
-        val tRX = scrX(a.tearR.x, a.tearR.y)
-        val tRY = scrY(a.tearR.x, a.tearR.y)
-        drawTear(tLX, tLY, s, time, face[F_TEAR], 0f)
-        drawTear(tRX, tRY, s, time, face[F_TEAR], 1.1f)
-
-        val swX = scrX(a.sweat.x, a.sweat.y)
-        val swY = scrY(a.sweat.x, a.sweat.y)
-        drawSweat(swX, swY, s, time, face[F_SWEAT], scratch)
-
-        val anX = scrX(a.anger.x, a.anger.y)
-        val anY = scrY(a.anger.x, a.anger.y)
-        drawAnger(anX, anY, s, time, face[F_ANGER], scratch)
+        pose.at(a.tearL.x, a.tearL.y, character, offX, offY, s) { tLX, tLY -> drawTear(tLX, tLY, s, time, face[F_TEAR], 0f) }
+        pose.at(a.tearR.x, a.tearR.y, character, offX, offY, s) { tRX, tRY -> drawTear(tRX, tRY, s, time, face[F_TEAR], 1.1f) }
+        pose.at(a.sweat.x, a.sweat.y, character, offX, offY, s) { swX, swY -> drawSweat(swX, swY, s, time, face[F_SWEAT], scratch) }
+        pose.at(a.anger.x, a.anger.y, character, offX, offY, s) { anX, anY -> drawAnger(anX, anY, s, time, face[F_ANGER], scratch) }
 
         val imgW = IMG_W * s
         val imgH = IMG_H * s
