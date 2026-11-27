@@ -25,21 +25,28 @@ jobs:
           SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
           SDKMGR="$(command -v sdkmanager || ls -1 "$SDK_ROOT"/cmdline-tools/*/bin/sdkmanager | tail -n 1)"
           yes | "$SDKMGR" --sdk_root="$SDK_ROOT" --licenses >/dev/null || true
-          "$SDKMGR" --sdk_root="$SDK_ROOT" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          if [ ! -d "$SDK_ROOT/platforms/android-35" ] || [ ! -d "$SDK_ROOT/build-tools/35.0.0" ]; then
+            "$SDKMGR" --sdk_root="$SDK_ROOT" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          else
+            echo "Android SDK 35 already present (UP-TO-DATE)"
+          fi
           echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+          gradle-home-cache-cleanup: true
 
       - name: Make gradlew executable
         run: chmod +x gradlew
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --stacktrace --no-daemon
+        run: ./gradlew :app:testDebugUnitTest --build-cache --stacktrace --no-daemon
 
       - name: Assemble debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace --no-daemon
+        run: ./gradlew :app:assembleDebug --build-cache --stacktrace --no-daemon
 
       - name: Upload YASMIN-AI APK artifact
         uses: actions/upload-artifact@v4
