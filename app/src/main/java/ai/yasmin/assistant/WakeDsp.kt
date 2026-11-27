@@ -90,6 +90,7 @@ object WakeDsp {
         }
         // trim quiet edges (within 20 dB of the loudest frame)
         var peak = en[0]; for (e in en) if (e > peak) peak = e
+        if (peak <= 1e-6) return emptyArray()
         val thr = peak - 4.6
         var a = 0; while (a < frames && en[a] < thr) a++
         var b = frames - 1; while (b > a && en[b] < thr) b--
